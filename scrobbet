@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+# -*- coding: UTF-8 -*-
+# TODO: http://stackoverflow.com/questions/11575398/how-can-i-save-my-secret-keys-and-password-securely-in-my-version-control-system
+# also, get docopt to work
+
+######################
+# To run: ./scrobbet #
+######################
+
+"""
+Scrobbet, the unofficial CLI scrobbler for Last.fm.
+
+Usage:
+  scrobbet (-h | --help)
+  scrobbet --version
+
+Options:
+  -h --help     Show this screen.
+  --version     Show version.
+"""
+
+import requests # making HTTP requests
+import taglib # reading IDv3 tags
+import os # listing contents of a dir
+import magic # inferring MIME-types
+import docopt # CLI argument parsing
+import signal, sys # intercepting SIGINT
+from time import time # getting the current time
+from hashlib import md5 # 32-char hex digest of a string
+from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
+from secrets import * # api key, secret and session key
+
+SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
+
+supported_mime_types = set([
+	'audio/mpeg',
+	'audio/mp4',
+	'audio/m4a',
+	'audio/ogg' # also add FLAC, ALAC, WAV maybe?
+])
+
+# construct API signature from the params dict
+def construct_api_sig(params):
+	api_sig_string = ''.join(key + params[key] for key in sorted(params.keys())) + SECRET
+	return md5(api_sig_string.encode('utf-8')).hexdigest()
+
+# build the final params dict from the track metadata
+def construct_params(tags):
+	# read in the tags
+	params = {
+		'method': 'track.scrobble',
+		'api_key': API_KEY,
+		'sk': SESSION_KEY,
+		'timestamp': str(int(time())),
+		'artist': tags['ARTIST'][0],
+		'track': tags['TITLE'][0],
+		'album': tags['ALBUM'][0],
+		'albumArtist': tags['ALBUMARTIST'][0]
+	}
+	params['api_sig'] = construct_api_sig(params)
+	return params
+
+# set up the params and scrobble!
+def scrobble(filename):
+	f = taglib.File(filename)
+	params = construct_params(f.tags)
+	scrobble_response = requests.post(SCROBBLE_ROOT, params=params)
+	parsed_response = bs(scrobble_response.text)
+	return parsed_response
+
+# is 'filename' an audio file?
+def is_audio_file(filename):
+	mime_type = magic.from_file(filename, mime=True).decode('utf-8')
+	return mime_type in supported_mime_types
+
+# return a list of all the audio files in 'directory'
+def grab_music_files(directory='.'):
+	return [
+		filename for filename in os.listdir(directory)
+		         if os.path.isfile(filename) and is_audio_file(filename)
+	]
+
+# return a new list in which the elements of 'musicfiles' are sorted
+# in ascending order of their IDv3 tracknumber field
+def sort_by_tracknumber(musicfiles):
+	tracknumbers = [int(taglib.File(f).tags['TRACKNUMBER'][0].split('/')[0]) for f in musicfiles]
+	return [filename for filename, tracknum in sorted(zip(musicfiles, tracknumbers), key=lambda x: x[1])]
+
+# get the music files in the directory, sorted by IDv3 tracknumber
+def grab_sorted_music_files(directory="."):
+	return sort_by_tracknumber(grab_music_files(directory))
+
+# handler to be called when SIGINT is received i.e. when Ctrl-C is pressed
+def sigint_handler(signal, frame):
+	print('Aborting scrobbling!')
+	sys.exit(1)
+signal.signal(signal.SIGINT, sigint_handler)
+
+def main():
+	for filename in grab_sorted_music_files('.'):
+		response = scrobble(filename)
+		lfm_status = response.lfm['status']
+		if lfm_status == 'ok':
+			print('Scrobbled', filename)
+
+if __name__ == "__main__":
+	# arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
+	# print(arguments)
+	main()
