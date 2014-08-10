@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 # TODO: http://stackoverflow.com/questions/11575398/how-can-i-save-my-secret-keys-and-password-securely-in-my-version-control-system
 # also, get docopt to work
+# also, check if not connected to the internet or if last.fm is not accessible for whatever reason
 
 ######################
 # To run: ./scrobbet #
@@ -25,6 +26,7 @@ import os # listing contents of a dir
 import magic # inferring MIME-types
 import docopt # CLI argument parsing
 import signal, sys # intercepting SIGINT
+import webbrowser # user authorization
 from time import time # getting the current time
 from hashlib import md5 # 32-char hex digest of a string
 from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
@@ -36,8 +38,37 @@ supported_mime_types = set([
 	'audio/mpeg',
 	'audio/mp4',
 	'audio/m4a',
-	'audio/ogg' # also add FLAC, ALAC, WAV maybe?
+	'audio/ogg',
+	'audio/flac',
+	'audio/wav',
+	'audio/aiff'
 ])
+
+# check if user is connected to the internet
+def check_connectivity(timeout=5):
+	try:
+		# hit example.com
+		_ = requests.get('http://93.184.216.119', timeout=timeout)
+		return True
+	except requests.ConnectionError:
+		print("You're not connected to the internet!")
+
+# get authentication token in order to get user authorization
+def get_auth_token():
+	auth_token_response = requests.get(SCROBBLE_ROOT, { 'api_key': API_KEY })
+	parsed_response = bs(auth_token_response)
+	return parsed_response.token
+
+# get authorization from user to scrobble to their account
+def request_authorization(auth_token):
+	print('Scrobbet needs your permission to scrobble to your account. Opening a browser window...')
+	url = 'http://www.last.fm/api/auth/?api_key=' API_KEY + '&token=' + auth_token
+	webbrowser.open_new(url)
+	print("Please select 'Authorize'!")
+
+# set up a web service session
+def fetch_web_service_session():
+	pass #todo
 
 # construct API signature from the params dict
 def construct_api_sig(params):
@@ -106,4 +137,5 @@ def main():
 if __name__ == "__main__":
 	# arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
 	# print(arguments)
-	main()
+	# main()
+	pass
