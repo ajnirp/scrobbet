@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
-# TODO: http://stackoverflow.com/questions/11575398/how-can-i-save-my-secret-keys-and-password-securely-in-my-version-control-system
+
+'''
+TODO
+
+1. Dot file containing session key in the ~/config directory - jone, do this if you wanna
+2. Track timing spacing - this one's yours
+3. Test browser authorization - mine
+4. Send stuff to web.rb instead of last dot feminism
+'''
 
 """
 Scrobbet, the unofficial CLI scrobbler for Last.fm.
@@ -171,6 +179,7 @@ def announce_tracks(files_tags_zipped):
 		print('Exiting...')
 		exit(1)
 
+# do everything, lel
 def scrobble(arguments):
 	# signal.signal(signal.SIGINT, sigint_handler)
 	tracks_to_scrobble = grab_sorted_music_files(arguments)
@@ -182,9 +191,17 @@ def scrobble(arguments):
 		if lfm_status == 'ok':
 			print('\t', title)
 
+# make the dotfile that will hold the 
+
+# # check if authorization has been done
+# def check_authorization():
+# 	make_dotfile()
+# 	with open('')
+
 if __name__ == "__main__":
 	arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
-	# print(arguments)
+	# if arguments['--authorize']:
+	# 	check_authorization()
 	if arguments['--scrobble']:
 		print("Searching tracks in '" + arguments['--directory'] + "' matching:")
 		for attribute in ATTRIBUTE_LIST:
