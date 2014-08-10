@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 # TODO: http://stackoverflow.com/questions/11575398/how-can-i-save-my-secret-keys-and-password-securely-in-my-version-control-system
-# also, get docopt to work
-# also, check if not connected to the internet or if last.fm is not accessible for whatever reason
-
-######################
-# To run: ./scrobbet #
-######################
 
 """
 Scrobbet, the unofficial CLI scrobbler for Last.fm.
@@ -16,7 +10,6 @@ Usage:
   scrobbet --version
   scrobbet --authorize
   scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>]
-  scrobbet 
 
 Options:
   -h --help           Show this screen.
@@ -36,10 +29,12 @@ import magic # inferring MIME-types
 import docopt # CLI argument parsing
 import signal, sys # intercepting SIGINT
 import webbrowser # user authorization
+import tty, termios # yes-no-prompt
 from time import time # getting the current time
 from hashlib import md5 # 32-char hex digest of a string
 from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
 from secrets import * # api key, secret and session key
+from math import log10, ceil # get maximum number of digits required to write a tracknumber
 
 SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
 DOT_FILE = './.scrobbet'
@@ -84,6 +79,7 @@ def fetch_web_service_session():
 # construct API signature from the params dict
 def construct_api_sig(params):
 	api_sig_string = ''.join(key + params[key] for key in sorted(params.keys())) + SECRET
+	# api_sig_string = sorted(key + val for key, val in params) + SECRET
 	return md5(api_sig_string.encode('utf-8')).hexdigest()
 
 # build the final params dict from the track metadata
@@ -107,8 +103,8 @@ def get_tags(filename):
 	return taglib.File(filename).tags
 
 # set up the params and scrobble!
-def scrobble(filename):
-	params = construct_params(get_tags(filename))
+def make_scrobble_request(tags):
+	params = construct_params(tags)
 	scrobble_response = requests.post(SCROBBLE_ROOT, params=params)
 	parsed_response = bs(scrobble_response.text)
 	return parsed_response
@@ -119,45 +115,76 @@ def is_audio_file(filename):
 	return mime_type in supported_mime_types
 
 # this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
-def do_tags_match_args(arguments, tags):
-	return all(arguments['--' + attribute] is False # user specified no constraints
+def do_tags_match_args(tags, arguments):
+	# print(tags, arguments)
+	return all(arguments['--' + attribute] is None # user specified no constraints
 		       or tags[attribute.upper()] == arguments['--' + attribute] # user did specify constraints, check 'em
 		       for attribute in ATTRIBUTE_LIST)
 
-# return a list of all the audio files in 'directory'
+# return a list of all the audio files in 'directory' sorted by tracknumber and
 # satisfying the user-specified constraints, like artist and album
-def grab_music_files(arguments):
+def grab_sorted_music_files(arguments):
 	directory = arguments['--directory']
 	musicfiles = [
 		filename for filename in os.listdir(directory)
 		         if os.path.isfile(filename) and is_audio_file(filename)
 	]
-	tags = [taglib.File(f).tags for f in musicfiles]
+	# zip the files together with their respective tags
+	files_tags_zipped = [(f, taglib.File(f).tags) for f in musicfiles]
+	# filter out files not satisfying the user constraints
+	files_tags_zipped = filter(lambda x: do_tags_match_args(x[1], arguments), files_tags_zipped)
+	# sort the files by track number
+	files_tags_zipped = sorted(files_tags_zipped, key=lambda x: int(x[1]['TRACKNUMBER'][0].split('/')[0]))
+	return files_tags_zipped
 
-# return a new list in which the elements of 'musicfiles' are sorted
-# in ascending order of their IDv3 tracknumber field
-def sort_by_tracknumber(musicfiles):
-	tracknumbers = [int(taglib.File(f).tags['TRACKNUMBER'][0].split('/')[0]) for f in musicfiles]
-	return [filename for filename, tracknum in sorted(zip(musicfiles, tracknumbers), key=lambda x: x[1])]
+# yes/no prompt
+def confirm_scrobbles():
+	print('Do you want to scrobble these tracks? [y/N]')
+	fd = sys.stdin.fileno()
+	old_settings = termios.tcgetattr(fd)
+	try:
+		tty.setraw(sys.stdin.fileno())
+		ch = sys.stdin.read(1)
+	finally:
+		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+	print(ch)
+	return ch.lower() in {'y'}
 
-# get the music files in the directory, sorted by IDv3 tracknumber
-def grab_sorted_music_files(arguments):
-	return sort_by_tracknumber(grab_music_files(arguments))
+# tell the user which tracks will be scrobbled
+def announce_tracks(files_tags_zipped):
+	print('The following tracks will be scrobbled:')
+	num_tracks = len(list(files_tags_zipped))
+	for _, tags in files_tags_zipped:
+		artist = tags['ARTIST'][0]
+		title = tags['TITLE'][0]
+		album = tags['ALBUM'][0]
+		tracknumber = str(tags['TRACKNUMBER'][0].split('/')[0])
+		print('\t', tracknumber.zfill(ceil(log10(num_tracks))), artist, '-', title, '-', album)
+	if confirm_scrobbles():
+		print('Scrobbling...')
+		return
+	else:
+		print('Exiting...')
+		exit(1)
 
 def scrobble(arguments):
 	# signal.signal(signal.SIGINT, sigint_handler)
-	for filename in grab_sorted_music_files(arguments):
-		response = scrobble(filename)
+	tracks_to_scrobble = grab_sorted_music_files(arguments)
+	announce_tracks(tracks_to_scrobble)
+	for track, tags in tracks_to_scrobble:
+		title = tags['TITLE'][0]
+		response = make_scrobble_request(tags)
 		lfm_status = response.lfm['status']
 		if lfm_status == 'ok':
-			print('Scrobbled', filename)
+			print('\t', title)
 
 if __name__ == "__main__":
 	arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
 	# print(arguments)
 	if arguments['--scrobble']:
-		print("Scrobbling tracks in '" + arguments['--directory'] + "' matching:")
+		print("Searching tracks in '" + arguments['--directory'] + "' matching:")
 		for attribute in ATTRIBUTE_LIST:
 			attr_val = arguments['--' + attribute]
-			if attr_val: print(attribute + ':', attr_val)
-			scrobble(arguments)
+			if attr_val: print('\t' + attribute.title() + ':', attr_val)
+			else: print('\tAny', attribute)
+		scrobble(arguments)
