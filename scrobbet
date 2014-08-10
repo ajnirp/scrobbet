@@ -118,7 +118,7 @@ def is_audio_file(filename):
 def do_tags_match_args(tags, arguments):
 	# print(tags, arguments)
 	return all(arguments['--' + attribute] is None # user specified no constraints
-		       or tags[attribute.upper()] == arguments['--' + attribute] # user did specify constraints, check 'em
+		       or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, check 'em
 		       for attribute in ATTRIBUTE_LIST)
 
 # return a list of all the audio files in 'directory' sorted by tracknumber and
@@ -152,6 +152,10 @@ def confirm_scrobbles():
 
 # tell the user which tracks will be scrobbled
 def announce_tracks(files_tags_zipped):
+	if list(files_tags_zipped) == []:
+		print("Couldn't find any tracks for these parameters")
+		print("Exiting...")
+		exit(1)
 	print('The following tracks will be scrobbled:')
 	num_tracks = len(list(files_tags_zipped))
 	for _, tags in files_tags_zipped:
