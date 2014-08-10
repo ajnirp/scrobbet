@@ -6,13 +6,12 @@ require 'nokogiri'
 SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
 API_KEY = ##
 SECRET = ##
-SESSION_KEY = ##
 
 post '/scrobble' do
 	data = {
 		'method' => 'track.scrobble',
 		'api_key' => API_KEY,
-		'sk' => SESSION_KEY,
+		'sk' => params[:sk],
 		'timestamp' => params[:timestamp],
 		'artist' => params[:artist],
 		'track' => params[:track],
