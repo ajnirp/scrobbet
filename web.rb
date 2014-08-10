@@ -4,8 +4,8 @@ require 'digest'
 require 'nokogiri'
 
 SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
-API_KEY = '***REMOVED***'
-SECRET = '***REMOVED***'
+API_KEY = 'b27b214ef5f1aa035e30721a133e2ec3'
+SECRET = 'e0982c56169d4bfe539bc30596009350'
 
 post '/scrobble' do
 	data = {
