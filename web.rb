@@ -3,10 +3,10 @@ require 'net/http'
 require 'digest'
 require 'nokogiri'
 
-SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
-API_KEY = '***REMOVED***'
-SECRET = '***REMOVED***'
-SESSION_KEY = '***REMOVED***'
+SCROBBLE_ROOT = ##
+API_KEY = ##
+SECRET = ##
+SESSION_KEY = ##
 
 get '/scrobble' do
 	data = {
