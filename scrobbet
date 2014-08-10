@@ -14,10 +14,19 @@ Scrobbet, the unofficial CLI scrobbler for Last.fm.
 Usage:
   scrobbet (-h | --help)
   scrobbet --version
+  scrobbet --authorize
+  scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>]
+  scrobbet 
 
 Options:
-  -h --help     Show this screen.
-  --version     Show version.
+  -h --help           Show this screen.
+  --version           Show version.
+  --authorize         Authorize Scrobbet to access your account on last.fm
+  -s --scrobble       Scrobble all music tracks in the current directory to last.fm
+  --title=<name>      Scrobble only tracks with title 'name'
+  --artist=<name>     Scrobble only tracks by artist 'name'
+  --album=<name>      Scrobble only tracks from the album 'name'
+  --directory=<name>  Scrobble only tracks in directory 'name' [default: .]
 """
 
 import requests # making HTTP requests
@@ -33,6 +42,8 @@ from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
 from secrets import * # api key, secret and session key
 
 SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
+DOT_FILE = './.scrobbet'
+ATTRIBUTE_LIST = ['artist', 'title', 'album']
 
 supported_mime_types = set([
 	'audio/mpeg',
@@ -62,7 +73,7 @@ def get_auth_token():
 # get authorization from user to scrobble to their account
 def request_authorization(auth_token):
 	print('Scrobbet needs your permission to scrobble to your account. Opening a browser window...')
-	url = 'http://www.last.fm/api/auth/?api_key=' API_KEY + '&token=' + auth_token
+	url = 'http://www.last.fm/api/auth/?api_key=' + API_KEY + '&token=' + auth_token
 	webbrowser.open_new(url)
 	print("Please select 'Authorize'!")
 
@@ -91,10 +102,13 @@ def construct_params(tags):
 	params['api_sig'] = construct_api_sig(params)
 	return params
 
+# get IDv3 tags for a music file
+def get_tags(filename):
+	return taglib.File(filename).tags
+
 # set up the params and scrobble!
 def scrobble(filename):
-	f = taglib.File(filename)
-	params = construct_params(f.tags)
+	params = construct_params(get_tags(filename))
 	scrobble_response = requests.post(SCROBBLE_ROOT, params=params)
 	parsed_response = bs(scrobble_response.text)
 	return parsed_response
@@ -104,12 +118,21 @@ def is_audio_file(filename):
 	mime_type = magic.from_file(filename, mime=True).decode('utf-8')
 	return mime_type in supported_mime_types
 
+# this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
+def do_tags_match_args(arguments, tags):
+	return all(arguments['--' + attribute] is False # user specified no constraints
+		       or tags[attribute.upper()] == arguments['--' + attribute] # user did specify constraints, check 'em
+		       for attribute in ATTRIBUTE_LIST)
+
 # return a list of all the audio files in 'directory'
-def grab_music_files(directory='.'):
-	return [
+# satisfying the user-specified constraints, like artist and album
+def grab_music_files(arguments):
+	directory = arguments['--directory']
+	musicfiles = [
 		filename for filename in os.listdir(directory)
 		         if os.path.isfile(filename) and is_audio_file(filename)
 	]
+	tags = [taglib.File(f).tags for f in musicfiles]
 
 # return a new list in which the elements of 'musicfiles' are sorted
 # in ascending order of their IDv3 tracknumber field
@@ -118,24 +141,23 @@ def sort_by_tracknumber(musicfiles):
 	return [filename for filename, tracknum in sorted(zip(musicfiles, tracknumbers), key=lambda x: x[1])]
 
 # get the music files in the directory, sorted by IDv3 tracknumber
-def grab_sorted_music_files(directory="."):
-	return sort_by_tracknumber(grab_music_files(directory))
+def grab_sorted_music_files(arguments):
+	return sort_by_tracknumber(grab_music_files(arguments))
 
-# handler to be called when SIGINT is received i.e. when Ctrl-C is pressed
-def sigint_handler(signal, frame):
-	print('Aborting scrobbling!')
-	sys.exit(1)
-signal.signal(signal.SIGINT, sigint_handler)
-
-def main():
-	for filename in grab_sorted_music_files('.'):
+def scrobble(arguments):
+	# signal.signal(signal.SIGINT, sigint_handler)
+	for filename in grab_sorted_music_files(arguments):
 		response = scrobble(filename)
 		lfm_status = response.lfm['status']
 		if lfm_status == 'ok':
 			print('Scrobbled', filename)
 
 if __name__ == "__main__":
-	# arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
+	arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
 	# print(arguments)
-	# main()
-	pass
+	if arguments['--scrobble']:
+		print("Scrobbling tracks in '" + arguments['--directory'] + "' matching:")
+		for attribute in ATTRIBUTE_LIST:
+			attr_val = arguments['--' + attribute]
+			if attr_val: print(attribute + ':', attr_val)
+			scrobble(arguments)
