@@ -73,7 +73,7 @@ def get_session(token):
 	params = {
 		'method': 'auth.getSession',
 		'api_key': API_KEY,
-		'token': get_token()
+		'token': token
 	}
 	params['api_sig'] = construct_api_sig(params)
 	session_response = requests.post(SCROBBLE_ROOT, params=params)
