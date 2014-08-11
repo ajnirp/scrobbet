@@ -1,15 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 
-'''
-TODO
-
-1. Dot file containing session key in the ~/config directory - jone, do this if you wanna
-2. Track timing spacing - this one's yours
-3. Test browser authorization - mine
-4. Send stuff to web.rb instead of last dot feminism
-'''
-
 """
 Scrobbet, the unofficial CLI scrobbler for Last.fm.
 
@@ -45,7 +36,6 @@ from secrets import * # api key, secret and session key
 from math import log10, ceil # get maximum number of digits required to write a tracknumber
 
 SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
-DOT_FILE = './.scrobbet'
 ATTRIBUTE_LIST = ['artist', 'title', 'album']
 
 supported_mime_types = set([
@@ -68,15 +58,32 @@ def check_connectivity(timeout=5):
 		print("You're not connected to the internet!")
 
 # get authentication token in order to get user authorization
-def get_auth_token():
-	auth_token_response = requests.get(SCROBBLE_ROOT, { 'api_key': API_KEY })
-	parsed_response = bs(auth_token_response)
-	return parsed_response.token
+def get_token():
+	params = {
+		'method': 'auth.getToken', 
+		'api_key': API_KEY
+	}
+	params['api_sig'] = construct_api_sig(params)
+	token_response = requests.post(SCROBBLE_ROOT, params=params)
+	parsed_response = bs(token_response.text)
+	return parsed_response.token.string
+
+# request session key from last.fm
+def get_session(token):
+	params = {
+		'method': 'auth.getSession',
+		'api_key': API_KEY,
+		'token': get_token()
+	}
+	params['api_sig'] = construct_api_sig(params)
+	session_response = requests.post(SCROBBLE_ROOT, params=params)
+	parsed_response = bs(session_response.text)
+	return parsed_response.key.string
 
 # get authorization from user to scrobble to their account
-def request_authorization(auth_token):
+def request_authorization(token):
 	print('Scrobbet needs your permission to scrobble to your account. Opening a browser window...')
-	url = 'http://www.last.fm/api/auth/?api_key=' + API_KEY + '&token=' + auth_token
+	url = 'http://www.last.fm/api/auth/?api_key=' + API_KEY + '&token=' + token
 	webbrowser.open_new(url)
 	print("Please select 'Authorize'!")
 
@@ -87,21 +94,19 @@ def fetch_web_service_session():
 # construct API signature from the params dict
 def construct_api_sig(params):
 	api_sig_string = ''.join(key + params[key] for key in sorted(params.keys())) + SECRET
-	# api_sig_string = sorted(key + val for key, val in params) + SECRET
 	return md5(api_sig_string.encode('utf-8')).hexdigest()
 
 # build the final params dict from the track metadata
-def construct_params(tags):
+def construct_params(tags, timestamp):
 	# read in the tags
 	params = {
 		'method': 'track.scrobble',
 		'api_key': API_KEY,
 		'sk': SESSION_KEY,
-		'timestamp': str(int(time())),
+		'timestamp': timestamp,
 		'artist': tags['ARTIST'][0],
 		'track': tags['TITLE'][0],
-		'album': tags['ALBUM'][0],
-		'albumArtist': tags['ALBUMARTIST'][0]
+		'album': tags['ALBUM'][0]
 	}
 	params['api_sig'] = construct_api_sig(params)
 	return params
@@ -111,8 +116,8 @@ def get_tags(filename):
 	return taglib.File(filename).tags
 
 # set up the params and scrobble!
-def make_scrobble_request(tags):
-	params = construct_params(tags)
+def make_scrobble_request(tags, timestamp):
+	params = construct_params(tags, timestamp)
 	scrobble_response = requests.post(SCROBBLE_ROOT, params=params)
 	parsed_response = bs(scrobble_response.text)
 	return parsed_response
@@ -138,7 +143,7 @@ def grab_sorted_music_files(arguments):
 		         if os.path.isfile(filename) and is_audio_file(filename)
 	]
 	# zip the files together with their respective tags
-	files_tags_zipped = [(f, taglib.File(f).tags) for f in musicfiles]
+	files_tags_zipped = [(f, taglib.File(f).tags, taglib.File(f).length) for f in musicfiles]
 	# filter out files not satisfying the user constraints
 	files_tags_zipped = filter(lambda x: do_tags_match_args(x[1], arguments), files_tags_zipped)
 	# sort the files by track number
@@ -166,7 +171,7 @@ def announce_tracks(files_tags_zipped):
 		exit(1)
 	print('The following tracks will be scrobbled:')
 	num_tracks = len(list(files_tags_zipped))
-	for _, tags in files_tags_zipped:
+	for _, tags, _ in files_tags_zipped:
 		artist = tags['ARTIST'][0]
 		title = tags['TITLE'][0]
 		album = tags['ALBUM'][0]
@@ -184,19 +189,35 @@ def scrobble(arguments):
 	# signal.signal(signal.SIGINT, sigint_handler)
 	tracks_to_scrobble = grab_sorted_music_files(arguments)
 	announce_tracks(tracks_to_scrobble)
-	for track, tags in tracks_to_scrobble:
+	timestamp = int(time())
+	for track, tags, length in reversed(tracks_to_scrobble):
 		title = tags['TITLE'][0]
-		response = make_scrobble_request(tags)
+		response = make_scrobble_request(tags, str(timestamp))
+		timestamp = timestamp - length
 		lfm_status = response.lfm['status']
 		if lfm_status == 'ok':
 			print('\t', title)
 
-# make the dotfile that will hold the 
+# return session key if already stored else make dotfile and return False
+def check_dotfile():
+	if not os.path.exists('~/config'):
+		os.makedirs('~/config')
+	if not os.path.isfile('~/config/.scrobbetsession'):
+		open('~/config/.scrobbetsession', 'w').close()
+		return False
+	file = open('~/config/.scrobbetsession', 'r')
+	sk = file.read(32)
+	file.close()
+	if len(sk) == 0:
+		return False
+	return sk
 
 # # check if authorization has been done
 # def check_authorization():
-# 	make_dotfile()
-# 	with open('')
+# 	sk = check_dotfile()
+#	if sk == False
+#		need_to_auth
+# 
 
 if __name__ == "__main__":
 	arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
