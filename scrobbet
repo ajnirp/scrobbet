@@ -34,9 +34,13 @@ from hashlib import md5 # 32-char hex digest of a string
 from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
 from secrets import * # api key, secret and session key
 from math import log10, ceil # get maximum number of digits required to write a tracknumber
+from itertools import accumulate # add track times for an album
 
 SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
 ATTRIBUTE_LIST = ['artist', 'title', 'album']
+HOME_DIR = os.path.expanduser("~")
+CONFIG_DIR = HOME_DIR + '/.config/'
+SK_LOCAL_STORE = CONFIG_DIR + '.scrobbetsession'
 
 supported_mime_types = set([
 	'audio/mpeg',
@@ -57,8 +61,56 @@ def check_connectivity(timeout=5):
 	except requests.ConnectionError:
 		print("You're not connected to the internet!")
 
+# return session key if already stored else make dotfile and return False
+def get_local_session_key():
+	if not os.path.exists(CONFIG_DIR):
+		os.makedirs(CONFIG_DIR)
+	if not os.path.isfile(SK_LOCAL_STORE):
+		delete_local_session_key()
+		return False
+	with open(SK_LOCAL_STORE, 'r') as f:
+		sk = f.read(32)
+		return sk if sk else None
+
+# store session key in the local config file
+def store_local_session_key(session_key):
+	print('Saving session key to', SK_LOCAL_STORE)
+	with open(SK_LOCAL_STORE, 'w') as f:
+		f.write(session_key)
+
+# function name says it all
+def delete_local_session_key():
+	print('Deleting current session key from', SK_LOCAL_STORE)
+	open(SK_LOCAL_STORE, 'w').close()
+	
+# check if authorization has been done
+def authorize():
+	if get_local_session_key():
+		if yes_no_prompt('You already have a session key. Would you like to discard it and get another?'):
+			delete_local_session_key()
+			authorize()
+			exit(0)
+	else:
+		print('Getting authentication token')
+		auth_token = get_new_auth_token()
+		print("Hit Enter when you're done authorizing")
+		request_authorization(auth_token)
+		input()
+		print('Getting session key')
+		session_key = get_new_session_key(auth_token)
+		store_local_session_key(session_key)
+
+# see if the response from last.fm has any errors
+# if yes, return 'em
+def check_response_error(parsed_response):
+	error_xml_tag = parsed_response.lfm.error
+	if error_xml_tag:
+		return error_xml_tag.text.strip()
+	else:
+		return None
+
 # get authentication token in order to get user authorization
-def get_token():
+def get_new_auth_token():
 	params = {
 		'method': 'auth.getToken', 
 		'api_key': API_KEY
@@ -66,10 +118,11 @@ def get_token():
 	params['api_sig'] = construct_api_sig(params)
 	token_response = requests.post(SCROBBLE_ROOT, params=params)
 	parsed_response = bs(token_response.text)
+	check_response_error(parsed_response)
 	return parsed_response.token.string
 
 # request session key from last.fm
-def get_session(token):
+def get_new_session_key(token):
 	params = {
 		'method': 'auth.getSession',
 		'api_key': API_KEY,
@@ -78,14 +131,13 @@ def get_session(token):
 	params['api_sig'] = construct_api_sig(params)
 	session_response = requests.post(SCROBBLE_ROOT, params=params)
 	parsed_response = bs(session_response.text)
+	check_response_error(parsed_response)
 	return parsed_response.key.string
 
 # get authorization from user to scrobble to their account
 def request_authorization(token):
-	print('Scrobbet needs your permission to scrobble to your account. Opening a browser window...')
 	url = 'http://www.last.fm/api/auth/?api_key=' + API_KEY + '&token=' + token
 	webbrowser.open_new(url)
-	print("Please select 'Authorize'!")
 
 # set up a web service session
 def fetch_web_service_session():
@@ -98,11 +150,15 @@ def construct_api_sig(params):
 
 # build the final params dict from the track metadata
 def construct_params(tags, timestamp):
+	sk = get_local_session_key()
+	if not sk:
+		print(color_string('No session key found :(', 'error'))
+		exit(1)
 	# read in the tags
 	params = {
 		'method': 'track.scrobble',
 		'api_key': API_KEY,
-		'sk': SESSION_KEY,
+		'sk': sk,
 		'timestamp': timestamp,
 		'artist': tags['ARTIST'][0],
 		'track': tags['TITLE'][0],
@@ -120,6 +176,7 @@ def make_scrobble_request(tags, timestamp):
 	params = construct_params(tags, timestamp)
 	scrobble_response = requests.post(SCROBBLE_ROOT, params=params)
 	parsed_response = bs(scrobble_response.text)
+	check_response_error(parsed_response)
 	return parsed_response
 
 # is 'filename' an audio file?
@@ -151,8 +208,8 @@ def grab_sorted_music_files(arguments):
 	return files_tags_zipped
 
 # yes/no prompt
-def confirm_scrobbles():
-	print('Do you want to scrobble these tracks? [y/N]')
+def yes_no_prompt(prompt):
+	print(prompt, '[y/N]')
 	fd = sys.stdin.fileno()
 	old_settings = termios.tcgetattr(fd)
 	try:
@@ -160,7 +217,6 @@ def confirm_scrobbles():
 		ch = sys.stdin.read(1)
 	finally:
 		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-	print(ch)
 	return ch.lower() in {'y'}
 
 # tell the user which tracks will be scrobbled
@@ -168,7 +224,7 @@ def announce_tracks(files_tags_zipped):
 	if list(files_tags_zipped) == []:
 		print("Couldn't find any tracks for these parameters")
 		print("Exiting...")
-		exit(1)
+		exit(0)
 	print('The following tracks will be scrobbled:')
 	num_tracks = len(list(files_tags_zipped))
 	for _, tags, _ in files_tags_zipped:
@@ -177,52 +233,55 @@ def announce_tracks(files_tags_zipped):
 		album = tags['ALBUM'][0]
 		tracknumber = str(tags['TRACKNUMBER'][0].split('/')[0])
 		print('\t', tracknumber.zfill(ceil(log10(num_tracks))), artist, '-', title, '-', album)
-	if confirm_scrobbles():
+	if yes_no_prompt('Do you want to scrobble these tracks?'):
 		print('Scrobbling...')
 		return
 	else:
 		print('Exiting...')
 		exit(1)
 
+# print to the terminal in colors
+def color_string(message, message_type):
+	# http://stackoverflow.com/questions/287871/print-in-terminal-with-colors-using-python
+	SUCCESS_TERM_COLOR = '\033[92m'
+	ERROR_TERM_COLOR = '\033[91m'
+	NORMAL_TERM_COLOR = '\033[0m'
+	if message_type == 'error':
+		return ERROR_TERM_COLOR + message + NORMAL_TERM_COLOR
+	elif message_type == 'success':
+		return SUCCESS_TERM_COLOR + message + NORMAL_TERM_COLOR
+	elif message_type == 'normal':
+		return NORMAL_TERM_COLOR + message
+
+# catch SIGINT e.g. via Ctrl-C
+def sigint_handler(signal, frame):
+	# restore terminal colors, just in case
+	print(color_string('', 'normal'))
+	exit(130) # exit with code 128 + 2; see http://www.tldp.org/LDP/abs/html/exitcodes.html
+
 # do everything, lel
 def scrobble(arguments):
-	# signal.signal(signal.SIGINT, sigint_handler)
+	signal.signal(signal.SIGINT, sigint_handler)
 	tracks_to_scrobble = grab_sorted_music_files(arguments)
 	announce_tracks(tracks_to_scrobble)
-	timestamp = int(time())
-	for track, tags, length in reversed(tracks_to_scrobble):
+	now = int(time())
+	total_length = sum(length for _, _, length in tracks_to_scrobble)
+	timestamp = now - total_length
+	for _, tags, length in tracks_to_scrobble:
 		title = tags['TITLE'][0]
 		response = make_scrobble_request(tags, str(timestamp))
-		timestamp = timestamp - length
-		lfm_status = response.lfm['status']
-		if lfm_status == 'ok':
-			print('\t', title)
+		error = check_response_error(response)
+		timestamp += length
+		if error:
+			print(color_string('\tFailed: ', 'error') + title + '. ' + error)
+		else:
+			print(color_string('\tScrobbled: ', 'success') + title)
 
-# return session key if already stored else make dotfile and return False
-def check_dotfile():
-	if not os.path.exists('~/config'):
-		os.makedirs('~/config')
-	if not os.path.isfile('~/config/.scrobbetsession'):
-		open('~/config/.scrobbetsession', 'w').close()
-		return False
-	file = open('~/config/.scrobbetsession', 'r')
-	sk = file.read(32)
-	file.close()
-	if len(sk) == 0:
-		return False
-	return sk
-
-# # check if authorization has been done
-# def check_authorization():
-# 	sk = check_dotfile()
-#	if sk == False
-#		need_to_auth
-# 
 
 if __name__ == "__main__":
 	arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
-	# if arguments['--authorize']:
-	# 	check_authorization()
+	if arguments['--authorize']:
+		authorize()
 	if arguments['--scrobble']:
 		print("Searching tracks in '" + arguments['--directory'] + "' matching:")
 		for attribute in ATTRIBUTE_LIST:
