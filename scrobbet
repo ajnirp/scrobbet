@@ -32,11 +32,11 @@ import tty, termios # yes-no-prompt
 from time import time # getting the current time
 from hashlib import md5 # 32-char hex digest of a string
 from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
-from secrets import * # api key, secret and session key
 from math import log10, ceil # get maximum number of digits required to write a tracknumber
 from itertools import accumulate # add track times for an album
 
-SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
+WEBAPP = 'http://scrobbetserv.herokuapp.com/'
+API_KEY = 'b27b214ef5f1aa035e30721a133e2ec3'
 ATTRIBUTE_LIST = ['artist', 'title', 'album']
 HOME_DIR = os.path.expanduser("~")
 CONFIG_DIR = HOME_DIR + '/.config/'
@@ -111,25 +111,14 @@ def check_response_error(parsed_response):
 
 # get authentication token in order to get user authorization
 def get_new_auth_token():
-	params = {
-		'method': 'auth.getToken', 
-		'api_key': API_KEY
-	}
-	params['api_sig'] = construct_api_sig(params)
-	token_response = requests.post(SCROBBLE_ROOT, params=params)
+	token_response = requests.post(WEBAPP + 'gettoken')
 	parsed_response = bs(token_response.text)
 	check_response_error(parsed_response)
 	return parsed_response.token.string
 
 # request session key from last.fm
 def get_new_session_key(token):
-	params = {
-		'method': 'auth.getSession',
-		'api_key': API_KEY,
-		'token': token
-	}
-	params['api_sig'] = construct_api_sig(params)
-	session_response = requests.post(SCROBBLE_ROOT, params=params)
+	session_response = requests.post(WEBAPP + 'getsession', {'token': token})
 	parsed_response = bs(session_response.text)
 	check_response_error(parsed_response)
 	return parsed_response.key.string
@@ -156,15 +145,12 @@ def construct_params(tags, timestamp):
 		exit(1)
 	# read in the tags
 	params = {
-		'method': 'track.scrobble',
-		'api_key': API_KEY,
 		'sk': sk,
 		'timestamp': timestamp,
 		'artist': tags['ARTIST'][0],
 		'track': tags['TITLE'][0],
 		'album': tags['ALBUM'][0]
 	}
-	params['api_sig'] = construct_api_sig(params)
 	return params
 
 # get IDv3 tags for a music file
@@ -174,7 +160,7 @@ def get_tags(filename):
 # set up the params and scrobble!
 def make_scrobble_request(tags, timestamp):
 	params = construct_params(tags, timestamp)
-	scrobble_response = requests.post(SCROBBLE_ROOT, params=params)
+	scrobble_response = requests.post(WEBAPP + 'scrobble', params=params)
 	parsed_response = bs(scrobble_response.text)
 	check_response_error(parsed_response)
 	return parsed_response
