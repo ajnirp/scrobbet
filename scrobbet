@@ -24,7 +24,7 @@ Options:
 import requests # making HTTP requests
 import taglib # reading IDv3 tags
 import os # listing contents of a dir
-import magic # inferring MIME-types
+import mimetypes # inferring MIME-types
 import docopt # CLI argument parsing
 import signal, sys # intercepting SIGINT
 import webbrowser # user authorization
@@ -181,7 +181,7 @@ def make_scrobble_request(tags, timestamp):
 
 # is 'filename' an audio file?
 def is_audio_file(filename):
-	mime_type = magic.from_file(filename, mime=True).decode('utf-8')
+	mime_type = mimetypes.guess_type(filename)[0]
 	return mime_type in supported_mime_types
 
 # this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
