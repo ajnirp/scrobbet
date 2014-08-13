@@ -268,10 +268,10 @@ def scrobble(arguments):
 	total_length = sum(length for _, _, length in tracks_to_scrobble)
 	timestamp = now - total_length
 	for _, tags, length in tracks_to_scrobble:
+		timestamp += length
 		title = tags['TITLE'][0]
 		response = make_scrobble_request(tags, str(timestamp))
 		error = check_response_error(response)
-		timestamp += length
 		if error:
 			print(color_string('\tFailed: ', 'error') + title + '. ' + error)
 		else:
