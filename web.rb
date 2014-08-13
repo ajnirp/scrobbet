@@ -1,7 +1,6 @@
 require 'sinatra'
 require 'net/http'
 require 'digest'
-require 'nokogiri'
 
 SCROBBLE_ROOT = 'http://ws.audioscrobbler.com/2.0/'
 API_KEY = ##
@@ -27,8 +26,7 @@ post '/scrobble' do
 		'track' => params[:track],
 		'album' => params[:album]
 	}
-	response = sendrequest(data)
-	Nokogiri::Slop(response.body).lfm.attr('status')
+	return sendrequest(data).body
 end
 
 post '/gettoken' do
@@ -36,8 +34,7 @@ post '/gettoken' do
 		'method' => 'auth.getToken', 
 		'api_key' => API_KEY
 	}
-	response = sendrequest(data)
-	Nokogiri::Slop(response.body).lfm.token.content
+	return sendrequest(data).body
 end
 
 post '/getsession' do
@@ -46,7 +43,5 @@ post '/getsession' do
 		'api_key' => API_KEY,
 		'token' => params[:token]
 	}
-	response = sendrequest(data)
-	Nokogiri::Slop(response.body).lfm.session.key.content
+	return sendrequest(data).body
 end
-
