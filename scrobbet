@@ -92,12 +92,14 @@ def authorize():
 			exit(0)
 	else:
 		print('Getting authentication token')
-		auth_token = get_new_auth_token()
+		auth_token, error = get_new_auth_token()
+		if error: print(color_string(error, 'error'))
 		print("Hit Enter when you're done authorizing")
 		request_authorization(auth_token)
 		input()
 		print('Getting session key')
-		session_key = get_new_session_key(auth_token)
+		session_key, error = get_new_session_key(auth_token)
+		if error: print(color_string(error, 'error'))
 		store_local_session_key(session_key)
 
 # see if the response from last.fm has any errors
@@ -113,15 +115,13 @@ def check_response_error(parsed_response):
 def get_new_auth_token():
 	token_response = requests.post(WEBAPP + 'gettoken')
 	parsed_response = bs(token_response.text)
-	check_response_error(parsed_response)
-	return parsed_response.token.string
+	return parsed_response.token.string, check_response_error(parsed_response)
 
 # request session key from last.fm
 def get_new_session_key(token):
 	session_response = requests.post(WEBAPP + 'getsession', {'token': token})
 	parsed_response = bs(session_response.text)
-	check_response_error(parsed_response)
-	return parsed_response.key.string
+	return parsed_response.key.string, check_response_error(parsed_response)
 
 # get authorization from user to scrobble to their account
 def request_authorization(token):
@@ -162,8 +162,7 @@ def make_scrobble_request(tags, timestamp):
 	params = construct_params(tags, timestamp)
 	scrobble_response = requests.post(WEBAPP + 'scrobble', params=params)
 	parsed_response = bs(scrobble_response.text)
-	check_response_error(parsed_response)
-	return parsed_response
+	return parsed_response, check_response_error(parsed_response)
 
 # is 'filename' an audio file?
 def is_audio_file(filename):
@@ -174,27 +173,32 @@ def is_audio_file(filename):
 def do_tags_match_args(tags, arguments):
 	# print(tags, arguments)
 	return all(arguments['--' + attribute] is None # user specified no constraints
-		       or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, check 'em
-		       for attribute in ATTRIBUTE_LIST)
+				or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, check 'em
+				for attribute in ATTRIBUTE_LIST)
 
 # sort tracks by an attribute and return a zip of
 # the sorted tracks and their corresponding tags
-def sort_tracks_and_zip(tracks, attribute):
-	zipped = [(f, taglib.File(f).tags) for f in tracks]
-	sort_key = lambda x: x[1][attribute.upper()][0]
-	if attribute == 'tracknumber':
-		# handles tracknumbers like '12/13' as well as normal ones like '12'
-		sort_key = lambda x: int(x[1]['TRACKNUMBER'][0].split('/')[0]
-	return sorted(zipped, key=lambda x: sort_key)
+# def sort_tracks_and_zip(tracks, attribute):
+# 	zipped = [(f, taglib.File(f).tags) for f in tracks]
+# 	sort_key = lambda x: x[1][attribute.upper()][0]
+# 	if attribute == 'tracknumber':
+# 		# handles tracknumbers like '12/13' as well as normal ones like '12'
+# 		sort_key = lambda x: int(x[1]['TRACKNUMBER'][0].split('/')[0]
+# 	# return sorted(zipped, key=lambda x: sort_key)
 
 # return a list of all the audio files in 'directory' sorted by tracknumber and
 # satisfying the user-specified constraints, like artist and album
 def grab_sorted_music_files(arguments):
-	directory = arguments['--directory']
-	musicfiles = [
-		filename for filename in os.listdir(directory)
-		         if os.path.isfile(filename) and is_audio_file(filename)
-	]
+	directory = os.path.realpath(arguments['--directory'])
+	print(os.listdir(directory))
+	musicfiles = [] # i don't like list comprehensions
+	for filename in os.listdir(directory):
+		fullpath = directory + '/' + filename
+		print(fullpath)
+		print(os.path.isfile(fullpath))
+		if os.path.isfile(fullpath) and is_audio_file(fullpath):
+			musicfiles.append(fullpath)
+	print(musicfiles)
 	# zip the files together with their respective tags
 	files_tags_zipped = [(f, taglib.File(f).tags, taglib.File(f).length) for f in musicfiles]
 	# filter out files not satisfying the user constraints
@@ -242,11 +246,11 @@ def color_string(message, message_type):
 	SUCCESS_TERM_COLOR = '\033[92m'
 	ERROR_TERM_COLOR = '\033[91m'
 	NORMAL_TERM_COLOR = '\033[0m'
-	if message_type == 'error':
+	if message_type is 'error':
 		return ERROR_TERM_COLOR + message + NORMAL_TERM_COLOR
-	elif message_type == 'success':
+	elif message_type is 'success':
 		return SUCCESS_TERM_COLOR + message + NORMAL_TERM_COLOR
-	elif message_type == 'normal':
+	elif message_type is 'normal':
 		return NORMAL_TERM_COLOR + message
 
 # catch SIGINT e.g. via Ctrl-C
@@ -257,7 +261,6 @@ def sigint_handler(signal, frame):
 
 # do everything, lel
 def scrobble(arguments):
-	signal.signal(signal.SIGINT, sigint_handler)
 	tracks_to_scrobble = grab_sorted_music_files(arguments)
 	announce_tracks(tracks_to_scrobble)
 	now = int(time())
@@ -266,22 +269,27 @@ def scrobble(arguments):
 	for _, tags, length in tracks_to_scrobble:
 		timestamp += length
 		title = tags['TITLE'][0]
-		response = make_scrobble_request(tags, str(timestamp))
-		error = check_response_error(response)
+		response, error = make_scrobble_request(tags, str(timestamp))
 		if error:
 			print(color_string('\tFailed: ', 'error') + title + '. ' + error)
 		else:
 			print(color_string('\tScrobbled: ', 'success') + title)
 
+# tell the user what filters are on
+def announce_arguments(arguments):
+	print("Searching tracks in '" + arguments['--directory'] + "' matching:")
+	for attribute in ATTRIBUTE_LIST:
+		attr_val = arguments['--' + attribute]
+		if attr_val: print('\t' + attribute.title() + ':', attr_val)
+		else: print('\tAny', attribute)
 
 if __name__ == "__main__":
+	# register the signal handler
+	signal.signal(signal.SIGINT, sigint_handler)
+	# parse command-line args and dump 'em in a dict
 	arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
 	if arguments['--authorize']:
 		authorize()
 	if arguments['--scrobble']:
-		print("Searching tracks in '" + arguments['--directory'] + "' matching:")
-		for attribute in ATTRIBUTE_LIST:
-			attr_val = arguments['--' + attribute]
-			if attr_val: print('\t' + attribute.title() + ':', attr_val)
-			else: print('\tAny', attribute)
+		announce_arguments(arguments)
 		scrobble(arguments)
