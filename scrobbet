@@ -190,15 +190,11 @@ def do_tags_match_args(tags, arguments):
 # satisfying the user-specified constraints, like artist and album
 def grab_sorted_music_files(arguments):
 	directory = os.path.realpath(arguments['--directory'])
-	print(os.listdir(directory))
 	musicfiles = [] # i don't like list comprehensions
 	for filename in os.listdir(directory):
 		fullpath = directory + '/' + filename
-		print(fullpath)
-		print(os.path.isfile(fullpath))
 		if os.path.isfile(fullpath) and is_audio_file(fullpath):
 			musicfiles.append(fullpath)
-	print(musicfiles)
 	# zip the files together with their respective tags
 	files_tags_zipped = [(f, taglib.File(f).tags, taglib.File(f).length) for f in musicfiles]
 	# filter out files not satisfying the user constraints
@@ -234,10 +230,10 @@ def announce_tracks(files_tags_zipped):
 		tracknumber = str(tags['TRACKNUMBER'][0].split('/')[0])
 		print('\t', tracknumber.zfill(ceil(log10(num_tracks))), artist, '-', title, '-', album)
 	if yes_no_prompt('Do you want to scrobble these tracks?'):
-		print('Scrobbling...')
+		print('Chose \'yes\', scrobbling...')
 		return
 	else:
-		print('Exiting...')
+		print('Chose \'no\', exiting...')
 		exit(1)
 
 # print to the terminal in colors
@@ -277,7 +273,7 @@ def scrobble(arguments):
 
 # tell the user what filters are on
 def announce_arguments(arguments):
-	print("Searching tracks in '" + arguments['--directory'] + "' matching:")
+	print("Searching tracks in directory '" + arguments['--directory'] + "' matching:")
 	for attribute in ATTRIBUTE_LIST:
 		attr_val = arguments['--' + attribute]
 		if attr_val: print('\t' + attribute.title() + ':', attr_val)
