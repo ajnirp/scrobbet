@@ -82,7 +82,7 @@ def store_local_session_key(session_key):
 def delete_local_session_key():
 	print('Deleting current session key from', SK_LOCAL_STORE)
 	open(SK_LOCAL_STORE, 'w').close()
-	
+
 # check if authorization has been done
 def authorize():
 	if get_local_session_key():
