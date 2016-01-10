@@ -28,7 +28,6 @@ import mimetypes # inferring MIME-types
 import docopt # CLI argument parsing
 import signal, sys # intercepting SIGINT
 import webbrowser # user authorization
-import tty, termios # yes-no-prompt
 from time import time # getting the current time
 from hashlib import md5 # 32-char hex digest of a string
 from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
@@ -203,18 +202,6 @@ def grab_sorted_music_files(arguments):
 	files_tags_zipped = sorted(files_tags_zipped, key=lambda x: int(x[1]['TRACKNUMBER'][0].split('/')[0]))
 	return files_tags_zipped
 
-# yes/no prompt
-def yes_no_prompt(prompt):
-	print(prompt, '[y/N]')
-	fd = sys.stdin.fileno()
-	old_settings = termios.tcgetattr(fd)
-	try:
-		tty.setraw(sys.stdin.fileno())
-		ch = sys.stdin.read(1)
-	finally:
-		termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-	return ch.lower() in {'y'}
-
 # tell the user which tracks will be scrobbled
 def announce_tracks(files_tags_zipped):
 	if list(files_tags_zipped) == []:
@@ -229,11 +216,11 @@ def announce_tracks(files_tags_zipped):
 		album = tags['ALBUM'][0]
 		tracknumber = str(tags['TRACKNUMBER'][0].split('/')[0])
 		print('\t', tracknumber.zfill(ceil(log10(num_tracks))), artist, '-', title, '-', album)
-	if yes_no_prompt('Do you want to scrobble these tracks?'):
-		print('Chose \'yes\', scrobbling...')
-		return
+	choice = input('Do you want to scrobble these tracks? [y/N] ')
+	if choice in ['y', 'Y']:
+		print('scrobbling...')
 	else:
-		print('Chose \'no\', exiting...')
+		print('exiting...')
 		exit(1)
 
 # print to the terminal in colors

@@ -7,7 +7,6 @@ API_KEY = ##
 SECRET = ##
 
 helpers do
-
   def sendrequest(data)
     sig = data.sort.map{|key, val| key + val}.join + SECRET
     data['api_sig'] = Digest::MD5.hexdigest(sig)
@@ -31,7 +30,7 @@ end
 
 post '/gettoken' do
   data =  {
-    'method' => 'auth.getToken', 
+    'method' => 'auth.getToken',
     'api_key' => API_KEY
   }
   return sendrequest(data).body
