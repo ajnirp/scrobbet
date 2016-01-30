@@ -8,12 +8,8 @@ Usage:
   scrobbet (-h | --help)
   scrobbet --version
   scrobbet --authorize
-<<<<<<< HEAD
-  scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>] [--tracknumber=<num>]
-=======
-  scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>]
   scrobbet -f <filename>
->>>>>>> 973cb0ae094f68903d4bfc5adb0d2a93afbb2fb3
+  scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>] [--tracknumber=<num>]
 
 Options:
   -h --help           Show this screen.
@@ -168,14 +164,12 @@ def should_check_for_tracknumber(tags, arguments):
 	return arguments['--tracknumber'] is not None
 
 def match_tracknumber(tags, arguments):
-	print(tags['TRACKNUMBER'])
 	if 'TRACKNUMBER' not in tags:
 		return False
 	return arguments['--tracknumber'] in tags['TRACKNUMBER']
 
 # this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
 def do_tags_match_args(tags, arguments):
-	print(should_check_for_tracknumber(tags, arguments))
 	if should_check_for_tracknumber(tags, arguments):
 		return match_tracknumber(tags, arguments)
 	other_args_match = all(arguments['--' + attribute] is None # user specified no constraints
