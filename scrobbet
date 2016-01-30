@@ -24,38 +24,21 @@ Options:
   --tracknumber=<num> Scrobble only the track with tracknumber 'num'
 """
 
+from time import time # getting the current time
+from hashlib import md5 # 32-char hex digest of a string
+from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
+from math import log10, ceil # get maximum number of digits required to write a tracknumber
+from itertools import accumulate # add track times for an album
 import requests # making HTTP requests
 import taglib # reading IDv3 tags
 import os # listing contents of a dir
 import mimetypes # inferring MIME-types
 import docopt # CLI argument parsing
 import signal, sys # intercepting SIGINT
-import webbrowser # user authorization
-from time import time # getting the current time
-from hashlib import md5 # 32-char hex digest of a string
-from bs4 import BeautifulSoup as bs # parsing XML responses from Last.fm
-from math import log10, ceil # get maximum number of digits required to write a tracknumber
-from itertools import accumulate # add track times for an album
 
-WEBAPP = 'http://scrobbetserv.herokuapp.com/'
-API_KEY = 'b27b214ef5f1aa035e30721a133e2ec3'
-ATTRIBUTE_LIST = ['artist', 'title', 'album']
-HOME_DIR = os.path.expanduser("~")
-CONFIG_DIR = HOME_DIR + '/.config/'
-SK_LOCAL_STORE = CONFIG_DIR + '.scrobbetsession'
-
-supported_mime_types = set([
-    'audio/mpeg',
-    'audio/mp4',
-    'audio/m4a',
-    'audio/ogg',
-    'audio/flac',
-    'audio/wav',
-    'audio/aiff'
-])
-
-def yes_no_prompt(prompt):
-    return input(prompt + ' [y/N] ') in ['y', 'Y']
+from constants import *
+import auth
+import utils
 
 # check if user is connected to the internet
 def check_connectivity(timeout=5):
@@ -66,70 +49,6 @@ def check_connectivity(timeout=5):
     except requests.ConnectionError:
         print("You're not connected to the internet!")
 
-# return session key if already stored else make dotfile and return False
-def get_local_session_key():
-    if not os.path.exists(CONFIG_DIR):
-        os.makedirs(CONFIG_DIR)
-    if not os.path.isfile(SK_LOCAL_STORE):
-        delete_local_session_key()
-        return False
-    with open(SK_LOCAL_STORE, 'r') as f:
-        sk = f.read(32)
-        return sk if sk else None
-
-# store session key in the local config file
-def store_local_session_key(session_key):
-    print('Saving session key to', SK_LOCAL_STORE)
-    with open(SK_LOCAL_STORE, 'w') as f:
-        f.write(session_key)
-
-# function name says it all
-def delete_local_session_key():
-    print('Deleting current session key from', SK_LOCAL_STORE)
-    open(SK_LOCAL_STORE, 'w').close()
-
-# check if authorization has been done
-def authorize():
-    if get_local_session_key():
-        if yes_no_prompt('You already have a session key. Would you like to discard it and get another?'):
-            delete_local_session_key()
-            authorize()
-            exit(0)
-    else:
-        print('Getting authentication token')
-        auth_token, error = get_new_auth_token()
-        if error: print(color_string(error, 'error'))
-        print("Hit Enter when you're done authorizing")
-        request_authorization(auth_token)
-        input()
-        print('Getting session key')
-        session_key, error = get_new_session_key(auth_token)
-        if error: print(color_string(error, 'error'))
-        store_local_session_key(session_key)
-
-# see if the response from last.fm has any errors
-# if yes, return 'em
-def check_response_error(parsed_response):
-    error_xml_tag = parsed_response.lfm.error
-    return error_xml_tag.text.strip() if error_xml_tag else None
-
-# get authentication token in order to get user authorization
-def get_new_auth_token():
-    token_response = requests.post(WEBAPP + 'gettoken')
-    parsed_response = bs(token_response.text)
-    return parsed_response.token.string, check_response_error(parsed_response)
-
-# request session key from last.fm
-def get_new_session_key(token):
-    session_response = requests.post(WEBAPP + 'getsession', {'token': token})
-    parsed_response = bs(session_response.text)
-    return parsed_response.key.string, check_response_error(parsed_response)
-
-# get authorization from user to scrobble to their account
-def request_authorization(token):
-    url = 'http://www.last.fm/api/auth/?api_key=' + API_KEY + '&token=' + token
-    webbrowser.open_new(url)
-
 # construct API signature from the params dict
 def construct_api_sig(params):
     api_sig_string = ''.join(key + params[key] for key in sorted(params.keys())) + SECRET
@@ -137,9 +56,9 @@ def construct_api_sig(params):
 
 # build the final params dict from the track metadata
 def construct_params(tags, timestamp):
-    sk = get_local_session_key()
+    sk = auth.get_local_session_key()
     if not sk:
-        print(color_string('No session key found :(', 'error'))
+        print(utils.color_string('No session key found :(', 'error'))
         exit(1)
     params = {
         'sk': sk,
@@ -154,28 +73,20 @@ def make_scrobble_request(tags, timestamp):
     params = construct_params(tags, timestamp)
     scrobble_response = requests.post(WEBAPP + 'scrobble', params=params)
     parsed_response = bs(scrobble_response.text)
-    return parsed_response, check_response_error(parsed_response)
+    return parsed_response, utils.check_response_error(parsed_response)
 
 def is_audio_file(filename):
     mime_type = mimetypes.guess_type(filename)[0]
-    return mime_type in supported_mime_types
+    return mime_type in SUPPORTED_MIME_TYPES
 
 def should_check_for_tracknumber(tags, arguments):
 	return arguments['--tracknumber'] is not None
 
-def match_tracknumber(tags, arguments):
-	if 'TRACKNUMBER' not in tags:
-		return False
-	return arguments['--tracknumber'] in tags['TRACKNUMBER']
-
 # this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
 def do_tags_match_args(tags, arguments):
-	if should_check_for_tracknumber(tags, arguments):
-		return match_tracknumber(tags, arguments)
-	other_args_match = all(arguments['--' + attribute] is None # user specified no constraints
-				           or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, check 'em
-				           for attribute in ATTRIBUTE_LIST)
-	return other_args_match
+	return all(arguments['--' + attribute] is None # user specified no constraints
+			   or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, check 'em
+			   for attribute in ATTRIBUTE_LIST)
 
 # return a list of all the audio files in 'directory' sorted by tracknumber and
 # satisfying the user-specified constraints, like artist and album
@@ -209,28 +120,11 @@ def announce_tracks(files_tags_zipped):
         print('\t', tracknumber.zfill(ceil(log10(num_tracks))), artist, '-', title, '-', album)
 
 def confirm_scrobbles():
-    if yes_no_prompt('Do you want to scrobble these tracks?'):
+    if utils.yes_no_prompt('Do you want to scrobble these tracks?'):
         print('scrobbling...')
     else:
         print('exiting...')
         exit(1)
-
-def color_string(message, message_type):
-    # http://stackoverflow.com/questions/287871/print-in-terminal-with-colors-using-python
-    SUCCESS_TERM_COLOR = '\033[92m'
-    ERROR_TERM_COLOR = '\033[91m'
-    NORMAL_TERM_COLOR = '\033[0m'
-    if message_type is 'error':
-        return ERROR_TERM_COLOR + message + NORMAL_TERM_COLOR
-    elif message_type is 'success':
-        return SUCCESS_TERM_COLOR + message + NORMAL_TERM_COLOR
-    elif message_type is 'normal':
-        return NORMAL_TERM_COLOR + message
-
-def sigint_handler(signal, frame):
-    # restore terminal colors, just in case
-    print(color_string('', 'normal'))
-    exit(130)
 
 def scrobble(arguments):
     tracks_to_scrobble = grab_sorted_music_files(arguments)
@@ -244,9 +138,9 @@ def scrobble(arguments):
         title = tags['TITLE'][0]
         response, error = make_scrobble_request(tags, str(timestamp))
         if error:
-            print(color_string('\tFailed: ', 'error') + title + '. ' + error)
+            print(utils.color_string('\tFailed: ', 'error') + title + '. ' + error)
         else:
-            print(color_string('\tScrobbled: ', 'success') + title)
+            print(utils.color_string('\tScrobbled: ', 'success') + title)
 
 def announce_arguments(arguments):
     print("Searching tracks in directory '" + arguments['--directory'] + "' matching:")
@@ -260,11 +154,11 @@ def scrobble_from_file(filename):
 
 if __name__ == "__main__":
     # register the signal handler
-    signal.signal(signal.SIGINT, sigint_handler)
-    # parse command-line args and dump 'em in a dict
+    signal.signal(signal.SIGINT, utils.sigint_handler)
+    # parse command-line args and dump them in a dict
     arguments = docopt.docopt(__doc__, version='Scrobbet 0.1')
     if arguments['--authorize']:
-        authorize()
+        auth.authorize()
     if arguments['--scrobble']:
         announce_arguments(arguments)
         scrobble(arguments)
