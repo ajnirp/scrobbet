@@ -183,16 +183,6 @@ def do_tags_match_args(tags, arguments):
 				           for attribute in ATTRIBUTE_LIST)
 	return other_args_match
 
-# sort tracks by an attribute and return a zip of
-# the sorted tracks and their corresponding tags
-# def sort_tracks_and_zip(tracks, attribute):
-# 	zipped = [(f, taglib.File(f).tags) for f in tracks]
-# 	sort_key = lambda x: x[1][attribute.upper()][0]
-# 	if attribute == 'tracknumber':
-# 		# handles tracknumbers like '12/13' as well as normal ones like '12'
-# 		sort_key = lambda x: int(x[1]['TRACKNUMBER'][0].split('/')[0]
-# 	# return sorted(zipped, key=lambda x: sort_key)
-
 # return a list of all the audio files in 'directory' sorted by tracknumber and
 # satisfying the user-specified constraints, like artist and album
 def grab_sorted_music_files(arguments):
