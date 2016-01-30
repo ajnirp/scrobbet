@@ -40,20 +40,6 @@ from constants import *
 import auth
 import utils
 
-# check if user is connected to the internet
-def check_connectivity(timeout=5):
-    try:
-        # hit example.com
-        _ = requests.get('http://93.184.216.119', timeout=timeout)
-        return True
-    except requests.ConnectionError:
-        print("You're not connected to the internet!")
-
-# construct API signature from the params dict
-def construct_api_sig(params):
-    api_sig_string = ''.join(key + params[key] for key in sorted(params.keys())) + SECRET
-    return md5(api_sig_string.encode('utf-8')).hexdigest()
-
 # build the final params dict from the track metadata
 def construct_params(tags, timestamp):
     sk = auth.get_local_session_key()
@@ -75,13 +61,6 @@ def make_scrobble_request(tags, timestamp):
     parsed_response = bs(scrobble_response.text)
     return parsed_response, utils.check_response_error(parsed_response)
 
-def is_audio_file(filename):
-    mime_type = mimetypes.guess_type(filename)[0]
-    return mime_type in SUPPORTED_MIME_TYPES
-
-def should_check_for_tracknumber(tags, arguments):
-	return arguments['--tracknumber'] is not None
-
 # this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
 def do_tags_match_args(tags, arguments):
 	return all(arguments['--' + attribute] is None # user specified no constraints
@@ -95,7 +74,7 @@ def grab_sorted_music_files(arguments):
     musicfiles = [] # i don't like list comprehensions
     for filename in os.listdir(directory):
         fullpath = directory + '/' + filename
-        if os.path.isfile(fullpath) and is_audio_file(fullpath):
+        if os.path.isfile(fullpath) and utils.is_audio_file(fullpath):
             musicfiles.append(fullpath)
     # zip the files together with their respective tags
     files_tags_zipped = [(f, taglib.File(f).tags, taglib.File(f).length) for f in musicfiles]
@@ -126,6 +105,7 @@ def confirm_scrobbles():
         print('exiting...')
         exit(1)
 
+# driver function
 def scrobble(arguments):
     tracks_to_scrobble = grab_sorted_music_files(arguments)
     announce_tracks(tracks_to_scrobble)

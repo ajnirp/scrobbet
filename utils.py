@@ -22,3 +22,7 @@ def sigint_handler(signal, frame):
 def check_response_error(parsed_response):
     error_xml_tag = parsed_response.lfm.error
     return error_xml_tag.text.strip() if error_xml_tag else None
+
+def is_audio_file(filename):
+    mime_type = mimetypes.guess_type(filename)[0]
+    return mime_type in SUPPORTED_MIME_TYPES
