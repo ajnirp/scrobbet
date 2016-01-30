@@ -8,7 +8,7 @@ Usage:
   scrobbet (-h | --help)
   scrobbet --version
   scrobbet --authorize
-  scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>]
+  scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>] [--tracknumber=<num>]
 
 Options:
   -h --help           Show this screen.
@@ -19,6 +19,7 @@ Options:
   --artist=<name>     Scrobble only tracks by artist 'name'
   --album=<name>      Scrobble only tracks from the album 'name'
   --directory=<name>  Scrobble only tracks in directory 'name' [default: .]
+  --tracknumber=<num> Scrobble only the track with tracknumber 'num'
 """
 
 import requests # making HTTP requests
@@ -168,12 +169,24 @@ def is_audio_file(filename):
 	mime_type = mimetypes.guess_type(filename)[0]
 	return mime_type in supported_mime_types
 
+def should_check_for_tracknumber(tags, arguments):
+	return arguments['--tracknumber'] is not None
+
+def match_tracknumber(tags, arguments):
+	print(tags['TRACKNUMBER'])
+	if 'TRACKNUMBER' not in tags:
+		return False
+	return arguments['--tracknumber'] in tags['TRACKNUMBER']
+
 # this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
 def do_tags_match_args(tags, arguments):
-	# print(tags, arguments)
-	return all(arguments['--' + attribute] is None # user specified no constraints
-				or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, check 'em
-				for attribute in ATTRIBUTE_LIST)
+	print(should_check_for_tracknumber(tags, arguments))
+	if should_check_for_tracknumber(tags, arguments):
+		return match_tracknumber(tags, arguments)
+	other_args_match = all(arguments['--' + attribute] is None # user specified no constraints
+				           or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, check 'em
+				           for attribute in ATTRIBUTE_LIST)
+	return other_args_match
 
 # sort tracks by an attribute and return a zip of
 # the sorted tracks and their corresponding tags
