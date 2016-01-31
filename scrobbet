@@ -55,8 +55,31 @@ def construct_params(tags, timestamp):
     }
     return params
 
+def construct_params_minimal(track_data):
+    artist, _, title, album = track_data
+    sk = auth.get_local_session_key()
+    if not sk:
+        print(utils.color_string('No session key found :(', 'error'))
+        exit(1)
+    params = {
+        'sk': sk,
+        'artist': artist,
+        'track': title,
+        'album': album,
+        'timestamp': str(int(time()))
+    }
+    return params
+
+# make a POST request to the last.fm API asking to scrobble a track using the IDv3 tags
 def make_scrobble_request(tags, timestamp):
     params = construct_params(tags, timestamp)
+    scrobble_response = requests.post(WEBAPP + 'scrobble', params=params)
+    parsed_response = bs(scrobble_response.text)
+    return parsed_response, utils.check_response_error(parsed_response)
+
+# make a POST request to the last.fm API asking to scrobble a track using the tuple read from a file
+def make_minimal_scrobble_request(track_data):
+    params = construct_params_minimal(track_data)
     scrobble_response = requests.post(WEBAPP + 'scrobble', params=params)
     parsed_response = bs(scrobble_response.text)
     return parsed_response, utils.check_response_error(parsed_response)
@@ -64,7 +87,7 @@ def make_scrobble_request(tags, timestamp):
 # this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
 def do_tags_match_args(tags, arguments):
 	return all(arguments['--' + attribute] is None # user specified no constraints
-			   or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, check 'em
+			   or arguments['--' + attribute] in tags[attribute.upper()] # user did specify constraints, so check them
 			   for attribute in ATTRIBUTE_LIST)
 
 # return a list of all the audio files in 'directory' sorted by tracknumber and
@@ -84,6 +107,7 @@ def grab_sorted_music_files(arguments):
     files_tags_zipped = sorted(files_tags_zipped, key=lambda x: int(x[1]['TRACKNUMBER'][0].split('/')[0]))
     return files_tags_zipped
 
+# display the list of tracks that will be scrobbled, using the IDv3 tag data
 def announce_tracks(files_tags_zipped):
     if list(files_tags_zipped) == []:
         print("Couldn't find any tracks for these parameters")
@@ -98,12 +122,37 @@ def announce_tracks(files_tags_zipped):
         tracknumber = str(tags['TRACKNUMBER'][0].split('/')[0])
         print('\t', tracknumber.zfill(ceil(log10(num_tracks))), artist, '-', title, '-', album)
 
+# display the list of tracks that will be scrobbled, using just the tuple read from a file
+def announce_tracks_minimal(track_data):
+    if track_data == []:
+        print("Couldn't find any tracks in the file")
+        print("Exiting...")
+        exit(0)
+    print('The following tracks will be scrobbled:')
+    num_tracks = len(track_data)
+    for track in track_data:
+        artist, tracknumber, title, album = track
+        print('\t', tracknumber.zfill(ceil(log10(num_tracks))), artist, '-', title, '-', album)
+
+# ask the user if they want to go ahead with the scrobble, and exit if they say no
 def confirm_scrobbles():
     if utils.yes_no_prompt('Do you want to scrobble these tracks?'):
         print('scrobbling...')
     else:
         print('exiting...')
         exit(1)
+
+# scrobble given only the artist, title, tracknumber and album
+def minimal_scrobble(tracks_to_scrobble):
+    announce_tracks_minimal(tracks_to_scrobble)
+    confirm_scrobbles()
+    for track_data in tracks_to_scrobble:
+        response, error = make_minimal_scrobble_request(track_data)
+        title = track_data[2]
+        if error:
+            print(utils.color_string('\tFailed: ', 'error') + title + '. ' + error)
+        else:
+            print(utils.color_string('\tScrobbled: ', 'success') + title)
 
 # driver function
 def scrobble(arguments):
@@ -129,8 +178,11 @@ def announce_arguments(arguments):
         if attr_val: print('\t' + attribute.title() + ':', attr_val)
         else: print('\tAny', attribute)
 
-def scrobble_from_file(filename):
-    pass # todo
+def scrobble_from_file(fname):
+    with open(fname, 'r') as f:
+        tracks_to_scrobble = [eval(line.strip()) for line in f.readlines()]
+        tracks_to_scrobble.sort(key=lambda t: int(t[1]))
+        minimal_scrobble(tracks_to_scrobble)
 
 if __name__ == "__main__":
     # register the signal handler

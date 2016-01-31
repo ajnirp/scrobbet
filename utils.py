@@ -1,3 +1,6 @@
+from constants import *
+import mimetypes
+
 def yes_no_prompt(prompt):
     return input(prompt + ' [y/N] ') in ['y', 'Y']
 
