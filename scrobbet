@@ -9,7 +9,7 @@ Usage:
   scrobbet --version
   scrobbet --authorize
   scrobbet -f <filename>
-  scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>] [--tracknumber=<num>]
+  scrobbet (-s | --scrobble) [--title=<name>] [--artist=<name>] [--album=<name>] [--directory=<name>] [--tracknumber=<num>] [-r <num> | --repeat=<num>]
 
 Options:
   -h --help           Show this screen.
@@ -22,6 +22,7 @@ Options:
   --album=<name>      Scrobble only tracks from the album 'name'
   --directory=<name>  Scrobble only tracks in directory 'name' [default: .]
   --tracknumber=<num> Scrobble only the track with tracknumber 'num'
+  -r --repeat <num>   Scrobble 'num' number of times [default: 1]
 """
 
 from time import time # getting the current time
@@ -108,12 +109,12 @@ def grab_sorted_music_files(arguments):
     return files_tags_zipped
 
 # display the list of tracks that will be scrobbled, using the IDv3 tag data
-def announce_tracks(files_tags_zipped):
+def announce_tracks(files_tags_zipped, times):
     if list(files_tags_zipped) == []:
         print("Couldn't find any tracks for these parameters")
         print("Exiting...")
         exit(0)
-    print('The following tracks will be scrobbled:')
+    print('The following tracks will be scrobbled', times, 'times:')
     num_tracks = len(list(files_tags_zipped))
     for _, tags, _ in files_tags_zipped:
         artist = tags['ARTIST'][0]
@@ -157,19 +158,21 @@ def minimal_scrobble(tracks_to_scrobble):
 # driver function
 def scrobble(arguments):
     tracks_to_scrobble = grab_sorted_music_files(arguments)
-    announce_tracks(tracks_to_scrobble)
+    # print(arguments); exit()
+    announce_tracks(tracks_to_scrobble, arguments['--repeat'])
     confirm_scrobbles()
     now = int(time())
     total_length = sum(length for _, _, length in tracks_to_scrobble)
     timestamp = now - total_length
-    for _, tags, length in tracks_to_scrobble:
-        timestamp += length
-        title = tags['TITLE'][0]
-        response, error = make_scrobble_request(tags, str(timestamp))
-        if error:
-            print(utils.color_string('\tFailed: ', 'error') + title + '. ' + error)
-        else:
-            print(utils.color_string('\tScrobbled: ', 'success') + title)
+    for _ in range(int(arguments['--repeat'])):
+        for _, tags, length in tracks_to_scrobble:
+            timestamp += length
+            title = tags['TITLE'][0]
+            response, error = make_scrobble_request(tags, str(timestamp))
+            if error:
+                print(utils.color_string('\tFailed: ', 'error') + title + '. ' + error)
+            else:
+                print(utils.color_string('\tScrobbled: ', 'success') + title)
 
 def announce_arguments(arguments):
     print("Searching tracks in directory '" + arguments['--directory'] + "' matching:")
