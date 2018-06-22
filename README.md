@@ -1,14 +1,19 @@
 scrobbet
 ========
 
-Unofficial scrobbler for Last.fm
+Unofficial command-line scrobbler for Last.fm
 
 Building
 --------
 
-Install dependencies:
+Install dependencies. On Ubuntu:
 
     sudo apt-get install python3 python3-taglib python3-docopt python3-bs4
+    
+On Fedora 27+:
+
+    sudo dnf install taglib-devel
+    pip3 install --user BeautifulSoup4 pytaglib docopt
 
 Then add the folder for this project to your `PATH`:
 
