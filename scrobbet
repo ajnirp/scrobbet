@@ -75,14 +75,14 @@ def construct_params_minimal(track_data):
 def make_scrobble_request(tags, timestamp):
     params = construct_params(tags, timestamp)
     scrobble_response = requests.post(WEBAPP + 'scrobble', params=params)
-    parsed_response = bs(scrobble_response.text)
+    parsed_response = bs(scrobble_response.text, "lxml")
     return parsed_response, utils.check_response_error(parsed_response)
 
 # make a POST request to the last.fm API asking to scrobble a track using the tuple read from a file
 def make_minimal_scrobble_request(track_data):
     params = construct_params_minimal(track_data)
     scrobble_response = requests.post(WEBAPP + 'scrobble', params=params)
-    parsed_response = bs(scrobble_response.text)
+    parsed_response = bs(scrobble_response.text, "lxml")
     return parsed_response, utils.check_response_error(parsed_response)
 
 # this function returns True if 'tags' matches the user-specified constraints, 'False' otherwise
